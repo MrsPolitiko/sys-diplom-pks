@@ -8,6 +8,7 @@ variable "cloud_id" {
     type = string
     default = "b1gsr925rdnh4d4obuqu"
 }
+
 variable "folder_id" {
     #name = "diplom-pks"
     type = string

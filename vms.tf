@@ -31,7 +31,7 @@ resource "yandex_compute_instance" "bastion" {
   scheduling_policy { preemptible = true }
 
   network_interface {
-    subnet_id          = yandex_vpc_subnet.develop_a.id #зона ВМ должна совпадать с зоной subnet!!!
+    subnet_id          = yandex_vpc_subnet.lan_a.id #зона ВМ должна совпадать с зоной subnet!!!
     nat                = true
     security_group_ids = [yandex_vpc_security_group.LAN.id, yandex_vpc_security_group.bastion.id]
   }
@@ -80,7 +80,7 @@ resource "yandex_compute_instance" "web_b" {
   zone        = "ru-central1-b" #зона ВМ должна совпадать с зоной subnet!!!
 
   resources {
-    cores         = var.test.cores
+    cores         = 2
     memory        = 1
     core_fraction = 20
   }
