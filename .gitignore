@@ -1,2 +1,8 @@
 authorized_key.json
 vm-cloud-diplom
+vm-cloud-diplom.pub
+terraform.tfstate
+terraform.tfstate.backup
+
+
+
