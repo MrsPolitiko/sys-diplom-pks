@@ -1,0 +1,28 @@
+#cloud-config
+users:
+  - name: pks
+    groups: sudo
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFVr4mXaj/syasr9AU+VIFuqsahZ4CTXDZJeu67xW1bA kseniya@Politiko-KS
+
+#@Politiko-KS
+#    # Добавьте пароль (в зашифрованном виде)
+#    passwd: "$6$AaglGzrEFUlrePGj$EwlIIDrskK/aRQxo/VpCwHcsh62RttgYf/IlyKc1PDXwlsL.G2z/aslKaJyHA5aVwavcfpNLW/bUHes8w7SRN0"
+
+package_update: true
+package_upgrade: false # Отключить автоапгрейд!!! Эта скотина может сломать всё
+
+packages:
+  - ansible
+  - python3
+  - python3-pip
+#  - openssh-server
+
+#runcmd:
+#  - systemctl enable ssh
+#  - systemctl start ssh
+#  - scp 
+#  - cp /home/ubuntu/vms-payload.yml /home/pks/
+#  - ansible-playbook /home/pks/vms-payload.yml
