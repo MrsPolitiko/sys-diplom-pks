@@ -1,10 +1,13 @@
-authorized_key.json
-vm-cloud-diplom
-vm-cloud-diplom.pub
-terraform.tfstate
-terraform.tfstate.backup
-/.terraform
+# Terraform
+**/.terraform/              # Игнорировать все папки .terraform
+*.tfstate
+*.tfstate.*
 .terraform.lock.hcl
+
+# SSH и секреты
+**/secrets/                 # Вся папка
+**/ssh-keys/                # Приватные SSH-ключи
+*.pub                       # все публичные ключи
 
 
 

@@ -1,6 +1,7 @@
-# Target Group для веб-серверов
+#*************** ALB Target Group для веб-серверов ***********#
 resource "yandex_alb_target_group" "web_servers" {
   name           = "web-servers-tg-${var.flow}"
+  description    = "Целевая группа для web серверов"
   target {
     subnet_id    = yandex_vpc_subnet.lan_a.id
     ip_address   = yandex_compute_instance.web_a.network_interface.0.ip_address
@@ -11,9 +12,10 @@ resource "yandex_alb_target_group" "web_servers" {
   }
 }
 
-# Backend Group
+#*************** ALB Backend Group ****************************#
 resource "yandex_alb_backend_group" "web_backend" {
   name           = "web-backend-${var.flow}"
+  description    = "Группа бэкендов"
 
   http_backend {
     name             = "web-backend"
@@ -22,10 +24,10 @@ resource "yandex_alb_backend_group" "web_backend" {
     target_group_ids = [yandex_alb_target_group.web_servers.id]
     
     healthcheck {
-      timeout             = "10s"
+      timeout             = "3s"
       interval            = "2s"
-      healthy_threshold   = 10
-      unhealthy_threshold = 15
+      healthy_threshold   = 4
+      unhealthy_threshold = 6
       http_healthcheck {
         path              = "/"
       }
@@ -33,12 +35,12 @@ resource "yandex_alb_backend_group" "web_backend" {
   }
 }
 
-# HTTP Router
+#***************  HTTP Router ********************************#
 resource "yandex_alb_http_router" "web_router" {
   name          = "web-router-${var.flow}"
 }
 
-# Virtual Host
+#***************  Virtual Host  ******************************#
 resource "yandex_alb_virtual_host" "web_virtual_host" {
   name           = "web-virtual-host-${var.flow}"
   http_router_id = yandex_alb_http_router.web_router.id
@@ -53,12 +55,13 @@ resource "yandex_alb_virtual_host" "web_virtual_host" {
   }
 }
 
-# Application Load Balancer
+#**************  Application Load Balancer  ***********************#
 resource "yandex_alb_load_balancer" "web_balancer" {
   name               = "web-balancer-${var.flow}"
   network_id         = yandex_vpc_network.develop.id
   security_group_ids = [yandex_vpc_security_group.web_sg.id]
 
+  # Размещается в 2-х зонах
   allocation_policy {
     location {
       zone_id   = "ru-central1-a"
