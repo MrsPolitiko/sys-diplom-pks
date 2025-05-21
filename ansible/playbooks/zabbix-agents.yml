@@ -1,0 +1,68 @@
+---
+  - name: Установка и настройка Zabbix агентов
+    hosts: all
+    vars_files:
+      - "../group_vars/all/main.yml"
+    become: yes
+
+    tasks:
+      # Установка Zabbix
+      - name: Download Zabbix repository
+        ansible.builtin.get_url:
+          url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_version }}+ubuntu22.04_all.deb"
+          dest: /tmp/zabbix.deb
+
+      - name: Install Zabbix repository
+        ansible.builtin.apt:
+          deb: /tmp/zabbix.deb
+
+      - name: Update cache
+        ansible.builtin.apt:
+          update_cache: yes
+
+      # Иногда apt занят, поэтому делаем выдержку времени
+      - name: Install zabbix-agent 
+        ansible.builtin.apt:
+          name: zabbix-agent
+          state: latest
+        async: 60  # Максимальное время ожидания (сек)
+        poll: 5     # Проверка каждые 5 сек
+        register: apt_result
+        until: apt_result is succeeded
+        retries: 3
+        notify: restart zabbix-agent
+
+      # === Настройка конфигурации агента ===
+      - name: Configure Zabbix agent server address
+        ansible.builtin.lineinfile:
+          path: /etc/zabbix/zabbix_agentd.conf
+          regexp: '^Server=127.0.0.1'
+          line: "Server={{ zabbix_server_ip }}"
+          state: present
+        notify: restart zabbix-agent
+
+      - name: Configure Zabbix agent active server
+        ansible.builtin.lineinfile:
+          path: /etc/zabbix/zabbix_agentd.conf
+          regexp: '^ServerActive=127.0.0.1'
+          line: "ServerActive={{ zabbix_server_ip }}"
+          state: present
+        notify: restart zabbix-agent
+
+      # Запуск и включение сервиса
+      - name: Ensure Zabbix agent is running and enabled
+        ansible.builtin.service:
+          name: zabbix-agent
+          state: started
+          enabled: yes
+
+    handlers:
+      - name: restart zabbix-agent
+        ansible.builtin.service:
+          name: zabbix-agent
+          state: restarted
+    
+        
+
+
+

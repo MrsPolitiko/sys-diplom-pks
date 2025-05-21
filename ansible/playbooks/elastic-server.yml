@@ -1,0 +1,77 @@
+---
+- hosts: elastic
+  become: yes
+  tasks:
+    - name: Install Java
+      ansible.builtin.apt:
+        name: openjdk-11-jdk
+        state: present
+        update_cache: yes
+
+    # wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+    - name: Add GPG key
+      ansible.builtin.apt_key:
+        url: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+        state: present
+
+    # echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+    - name: Add Elasticsearch repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://artifacts.elastic.co/packages/7.x/apt stable main"
+        state: present
+        filename: "elastic-7.x"
+        
+    - name: Install Elasticsearch
+      ansible.builtin.apt:
+        name: elasticsearch
+        state: present
+        update_cache: yes
+
+    - name: Configure Elasticsearch
+      ansible.builtin.copy:
+        dest: /etc/elasticsearch/elasticsearch.yml
+        content: |
+          cluster.name: my-elastic-cluster
+          node.name: "{{ ansible_hostname }}"
+          network.host: 0.0.0.0
+          http.port: 9200
+          discovery.type: single-node
+        owner: root
+        group: elasticsearch
+        mode: "0640"
+
+    - name: Ensure Elasticsearch is running
+      ansible.builtin.service:
+        name: elasticsearch
+        state: started
+        enabled: yes
+
+    - name: Install Filebeat
+      ansible.builtin.apt:
+        name: "filebeat={{ elastic_version }}"
+        state: present
+
+    - name: Configure Filebeat
+      ansible.builtin.copy:
+        dest: /etc/filebeat/filebeat.yml
+        content: |
+          filebeat.inputs:
+            - type: log
+              enabled: true
+              paths:
+                - /var/log/nginx/access.log
+                - /var/log/nginx/error.log
+          output.elasticsearch:
+            hosts: ["localhost:9200"]
+          setup.ilm.enabled: false
+          setup.template.name: "nginx"
+          setup.template.pattern: "nginx-*"
+        owner: root
+        group: root
+        mode: "0640"
+
+    - name: Enable and start Filebeat
+      ansible.builtin.service:
+        name: filebeat
+        state: started
+        enabled: yes

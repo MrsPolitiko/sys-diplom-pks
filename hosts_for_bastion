@@ -1,0 +1,5 @@
+51.250.69.244   bastion.ru-central1.internal
+10.0.1.29   web-a.ru-central1.internal
+10.0.2.18   web-b.ru-central1.internal
+10.0.1.4   zabbix.ru-central1.internal
+10.0.1.8   elastic.ru-central.internal

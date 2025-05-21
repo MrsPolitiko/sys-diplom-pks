@@ -2,25 +2,29 @@
 - hosts: webservers
   become: yes
   tasks:
-    - name: Ensure nginx is installed
-      apt:
-        name: nginx
+    - name: Install packages
+      ansible.builtin.apt:
+        name: 
+          - nginx
+          - filebeat           # Для elasticsearch
         state: present
-
+        update_cache: yes
+        
     - name: Ensure nginx is running
-      service:
+      ansible.builtin.service:
         name: nginx
         state: started
         enabled: yes
 
-    - name: Create web content directory
-      file:
+    - name: Create web directory
+      ansible.builtin.file:
         path: /var/www/html
         state: directory
         mode: '0755'
 
+    # Нужно использховать шаблон!!!
     - name: Create index page
-      copy:
+      ansible.builtin.copy:
         content: |
           <html>
           <body>
@@ -29,3 +33,36 @@
           </html>
         dest: /var/www/html/index.html
 
+    - name: Configure Filebeat for Nginx logs
+      ansible.builtin.copy:
+        content: |
+          filebeat.inputs:
+          - type: log
+            enabled: true
+            paths:
+              - /var/log/nginx/access.log
+              - /var/log/nginx/error.log
+
+          output.elasticsearch:
+            hosts: ["{{ elastic_ip }}:9200"]
+
+          setup.ilm.enabled: false
+          setup.template.name: "nginx"
+          setup.template.pattern: "nginx-*"
+        dest: /etc/filebeat/filebeat.yml
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart filebeat
+
+    - name: Enable and start Filebeat
+      ansible.builtin.service:
+        name: filebeat
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart filebeat
+      ansible.builtin.service:
+        name: filebeat
+        state: restarted

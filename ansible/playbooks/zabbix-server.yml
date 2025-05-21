@@ -1,0 +1,281 @@
+---
+  - name: Установка и настройка Zabbix с PostgreSQL
+    hosts: zabbix
+    vars_files:
+      - "../group_vars/all/main.yml"
+    become: yes
+    vars:
+      # Переменные перенесла в group_vars/all/main.yml
+      # postgresql_version: "12"
+      # zabbix_version: "7.0"
+      # zabbix_db_name: "zabbix"
+      # zabbix_db_user: "zabbix"
+      # zabbix_db_password: "zabbix"
+      # zabbix_server: "zabbix.example.com"
+      # postgresql_password: "123456789"
+  
+    tasks:
+      # Установка зависимостей
+      - name: Install required packages
+        ansible.builtin.apt:
+          name:
+            - postgresql
+            - postgresql-contrib
+            - python3-pip
+          update_cache: yes
+          state: present
+  
+      - name: Install psycopg2 for PostgreSQL interaction
+        pip:
+          name: psycopg2-binary
+          state: present
+  
+      # Настройка PostgreSQL
+      - name: Ensure PostgreSQL service is running
+        ansible.builtin.service:
+          name: postgresql
+          state: started
+          enabled: yes
+  
+      - name: Create Zabbix database user
+        ansible.builtin.command: >
+          sudo -u postgres psql -c "CREATE USER {{ zabbix_db_user }} 
+          WITH PASSWORD '{{ zabbix_db_password }}' CREATEDB;"
+        changed_when: false
+
+      - name: Create Zabbix database
+        ansible.builtin.command: >
+          sudo -u postgres createdb -O {{ zabbix_db_user }} {{ zabbix_db_name }}
+        changed_when: false
+
+      # Установка Zabbix
+      - name: Download Zabbix repository
+        ansible.builtin.get_url:
+          #url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_version }}+ubuntu22.04_all.deb"
+          url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu22.04_all.deb"
+          dest: /tmp/zabbix.deb
+  
+      - name: Install Zabbix repository
+        ansible.builtin.apt:
+          deb: /tmp/zabbix.deb
+  
+      - name: Install Zabbix components
+        ansible.builtin.apt:
+          name:
+            - zabbix-server-pgsql
+            - zabbix-frontend-php
+            - php8.1-pgsql
+            - nginx
+            - zabbix-nginx-conf
+            - zabbix-sql-scripts
+            #- php-fpm
+          update_cache: yes
+          state: present
+  
+      # Настройка Zabbix
+      # - name: Import Zabbix database schema
+      #   ansible.builtin.command: >
+      #     zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz |
+      #     PGPASSWORD={{ zabbix_db_password }} psql -h localhost -U {{ zabbix_db_user }} {{ zabbix_db_name }}
+      #   changed_when: false
+
+      # - name: Import Zabbix database schema
+      #   ansible.builtin.command: >
+      #     sh -c 'cd /tmp &&
+      #     zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | psql {{ zabbix_db_name }}'
+      #   become: yes
+      #   become_user: postgres
+      #   changed_when: false
+
+      # Импорт делать нужно с явным указанием логин-пароля
+      - name: Import Zabbix database schema
+        ansible.builtin.command: |
+          sudo -u zabbix bash -c "zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz |
+          PGPASSWORD={{ zabbix_db_password }} psql -h localhost -U {{ zabbix_db_user }} {{ zabbix_db_name }}"
+        changed_when: false
+
+      # Даём гранты
+      - name: Grant privileges
+        ansible.builtin.shell: |
+          sudo -u postgres psql -d {{ zabbix_db_name }} -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ zabbix_db_user }};"
+          sudo -u postgres psql -d {{ zabbix_db_name }} -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ zabbix_db_user }};"
+        args:
+          chdir: /tmp
+        changed_when: false
+
+      - name: Configure Zabbix server DB password
+        ansible.builtin.lineinfile:
+          path: /etc/zabbix/zabbix_server.conf
+          regexp: '^# DBPassword='
+          line: "DBPassword={{ zabbix_db_password }}"
+          state: present
+  
+
+      # В дефолтной настройке необходимо внести корректировки в конфиг сервера иначе не будет работать
+      - name: Configure PHP settings for Zabbix
+        ansible.builtin.ini_file:
+          path: /etc/php/8.1/fpm/php.ini  # Для PHP-FPM 8.1 (Ubuntu 22.04)
+          section: PHP
+          option: "{{ item.option }}"
+          value: "{{ item.value }}"
+          backup: yes
+          mode: 0644
+        loop:
+          - { option: "post_max_size", value: "32M" }
+          - { option: "max_execution_time", value: "300" }
+          - { option: "max_input_time", value: "300" }
+          - { option: "memory_limit", value: "256M" }
+          - { option: "upload_max_filesize", value: "16M" }
+          - { option: "date.timezone", value: "Europe/Moscow" }  
+        notify: restart php-fpm
+
+
+      # Запуск сервисов
+      - name: Ensure services are running
+        ansible.builtin.service:
+          name: "{{ item }}"
+          state: started
+          enabled: yes
+        loop:
+          - postgresql
+          - nginx
+          - zabbix-server
+
+      # Настройка прав на логи
+      - name: Ensure log directory exists
+        ansible.builtin.file:
+          path: /var/log/nginx
+          state: directory
+          owner: www-data
+          group: adm
+          mode: '0755'
+        
+      - name: Create error log file
+        ansible.builtin.file:
+          path: /var/log/nginx/error.log
+          state: touch
+          owner: www-data
+          group: adm
+          mode: '0644'
+
+      # Настройка PID-директории
+      - name: Ensure PID directory exists
+        ansible.builtin.file:
+          path: /run/nginx
+          state: directory
+          owner: www-data
+          group: www-data
+          mode: '0755'
+
+#*********************************************************************************
+
+      # Берем внешний IP сервера, из фактов Ansible вытянуть не получится, там только локальный адрес
+      - name: Get server public IP
+        ansible.builtin.shell: |
+          curl 2ip.ru
+        register: public_ip
+        changed_when: false
+
+      # Бэкап конфига
+      - name: Backup original nginx config
+        ansible.builtin.copy:
+          src: /etc/zabbix/nginx.conf
+          dest: /etc/zabbix/nginx.conf.bak
+          remote_src: yes
+          mode: '0644'
+          
+      # На самом деле лучше использовать шаблоны jinja, но мне показался такой путь проще
+      - name: Configure Zabbix Nginx
+        ansible.builtin.copy:
+          dest: /etc/zabbix/nginx.conf
+          content: |
+            server {
+                listen          80;
+                server_name     {{ public_ip.stdout }} localhost;
+
+                root    /usr/share/zabbix;
+                index   index.php;
+
+                location = /favicon.ico {
+                        log_not_found   off;
+                }
+
+                location / {
+                        try_files       $uri $uri/ /index.php?$args;
+                }
+
+                location /assets {
+                        access_log      off;
+                        expires         10d;
+                }
+
+                location ~ /\.ht {
+                        deny            all;
+                }
+
+                location ~ /(api\/|conf[^\.]|include|locale) {
+                        deny            all;
+                        return          404;
+                }
+
+                location /vendor {
+                        deny            all;
+                        return          404;
+                }
+
+                location ~ [^/]\.php(/|$) {
+                        fastcgi_pass    unix:{{ php_fpm_socket }};
+                        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                        fastcgi_index   index.php;
+
+                        fastcgi_param   DOCUMENT_ROOT   /usr/share/zabbix;
+                        fastcgi_param   SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                        # fastcgi_param   PATH_TRANSLATED /usr/share/zabbix$fastcgi_script_name;
+
+                        include fastcgi_params;
+                        fastcgi_param   QUERY_STRING    $query_string;
+                        fastcgi_param   REQUEST_METHOD  $request_method;
+                        fastcgi_param   CONTENT_TYPE    $content_type;
+                        fastcgi_param   CONTENT_LENGTH  $content_length;
+
+                        fastcgi_intercept_errors        on;
+                        fastcgi_ignore_client_abort     off;
+                        fastcgi_connect_timeout         60;
+                        fastcgi_send_timeout            180;
+                        fastcgi_read_timeout            180;
+                        fastcgi_buffer_size             128k;
+                        fastcgi_buffers                 4 256k;
+                        fastcgi_busy_buffers_size       256k;
+                        fastcgi_temp_file_write_size    256k;
+                }
+            }
+          owner: root
+          group: root
+          mode: '0644'
+        notify: restart nginx
+
+      # Линк на нашу конфигурацию
+      - name: Create link to Zabbix config 
+        ansible.builtin.file:
+          src: /etc/zabbix/nginx.conf
+          dest: /etc/nginx/sites-enabled/zabbix.conf
+          state: link
+        notify: restart nginx
+
+      # Удаление дефолтного сайта Nginx
+      - name: Remove default site
+        ansible.builtin.file:
+          path: /etc/nginx/sites-enabled/default
+          state: absent
+        notify: restart nginx
+
+    handlers:
+      - name: restart nginx
+        ansible.builtin.service:
+          name: nginx
+          state: restarted
+
+      - name: restart php-fpm
+        ansible.builtin.service:
+          name: php8.1-fpm
+          state: restarted
