@@ -1,6 +1,6 @@
 #cloud-config
 users:
-  - name: pks
+  - name: ${vm_username}
     groups: sudo
     shell: /bin/bash
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]

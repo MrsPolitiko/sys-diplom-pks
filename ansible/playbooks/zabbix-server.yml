@@ -4,15 +4,6 @@
     vars_files:
       - "../group_vars/all/main.yml"
     become: yes
-    vars:
-      # Переменные перенесла в group_vars/all/main.yml
-      # postgresql_version: "12"
-      # zabbix_version: "7.0"
-      # zabbix_db_name: "zabbix"
-      # zabbix_db_user: "zabbix"
-      # zabbix_db_password: "zabbix"
-      # zabbix_server: "zabbix.example.com"
-      # postgresql_password: "123456789"
   
     tasks:
       # Установка зависимостей

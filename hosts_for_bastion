@@ -1,5 +1,5 @@
-89.169.142.221   bastion.ru-central1.internal
-10.0.1.30   web-a.ru-central1.internal
-10.0.2.25   web-b.ru-central1.internal
-10.0.1.22   zabbix.ru-central1.internal
-10.0.1.18   elastic.ru-central.internal
+89.169.150.77   bastion.ru-central1.internal
+10.0.1.18   web-a.ru-central1.internal
+10.0.2.18   web-b.ru-central1.internal
+10.0.1.29   zabbix.ru-central1.internal
+10.0.1.32   elastic.ru-central.internal

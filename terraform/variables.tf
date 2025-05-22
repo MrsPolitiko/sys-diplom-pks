@@ -4,13 +4,13 @@ variable "flow" {
 }
 
 variable "cloud_id" {
-    #name = "organization-politiko-ks"
+    #description = "organization-politiko-ks"
     type = string
     default = "b1gsr925rdnh4d4obuqu"
 }
 
 variable "folder_id" {
-    #name = "diplom-pks"
+    #description = "diplom-pks"
     type = string
     default = "b1g1nvf8fhbl914bbl81"
 }
@@ -22,4 +22,10 @@ variable "bastion" {
         memory = 1
         core_fraction = 20
     }
+}
+
+variable "vm_username" {
+    description = "Username for VM cloud instances"
+    type        = string
+    default     = "pks"
 }

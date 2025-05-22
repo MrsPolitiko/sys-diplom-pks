@@ -9,7 +9,8 @@
       # Установка Zabbix
       - name: Download Zabbix repository
         ansible.builtin.get_url:
-          url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_version }}+ubuntu22.04_all.deb"
+          #url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_version }}+ubuntu22.04_all.deb"
+          url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu22.04_all.deb"
           dest: /tmp/zabbix.deb
 
       - name: Install Zabbix repository

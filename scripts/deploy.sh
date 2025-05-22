@@ -55,6 +55,8 @@ ZABBIX_NAME=$(terraform output -raw zabbix_name)
 WEB_A_NAME=$(terraform output -raw web_a_name)
 WEB_B_NAME=$(terraform output -raw web_b_name)
 ELASTIC_NAME=$(terraform output -raw elastic_name)
+VM_USERNAME=$(terraform output -raw vm_username)
+RESOURCE_HOME="/home/${VM_USERNAME}"
 
 BASTION_FQDN="${BASTION_NAME}.ru-central1.internal"
 ZABBIX_FQDN="${ZABBIX_NAME}.ru-central1.internal"
@@ -94,7 +96,7 @@ ${ELASTIC_FQDN}
 [all:vars]
 #ansible_ssh_private_key_file=../ssh-keys/vm-cloud-diplom
 #ansible_ssh_common_args='${SSH_CONNECT_TIMEOUT} -o ProxyCommand="ssh -W %h:%p -q pks@${BASTION_WAN_IP} -i ../${SSH_IDENTITY_FILE}"'
-ansible_ssh_private_key_file=/home/pks/.ssh/vm-cloud-diplom
+ansible_ssh_private_key_file=${RESOURCE_HOME}/.ssh/vm-cloud-diplom
 ansible_ssh_common_args='${SSH_CONNECT_TIMEOUT}'
 
 [bastion:vars]
@@ -148,7 +150,7 @@ echo -e "${GREEN}Check bastion host...${NC}"
 #echo -e "${YELLOW}BASTION_WAN_IP is ${BASTION_WAN_IP} ${NC}"
 duration=15
 while [ $duration -gt 0 ]; do
-  if ssh -q ${SSH_KEYS} pks@${BASTION_WAN_IP} exit; then
+  if ssh -q ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} exit; then
     echo "SSH доступен!"
     break
   else
@@ -167,16 +169,18 @@ fi
 echo -e "${GREEN}Copying config files...${NC}"
 # Обновляем hosts на bastion
 echo -e "${GREEN}... hosts${NC}"
-scp ${SSH_KEYS} ./hosts_for_bastion pks@${BASTION_WAN_IP}:/tmp/hosts_for_bastion
-ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "sudo bash -c 'cat /tmp/hosts_for_bastion >> /etc/hosts'"
+scp ${SSH_KEYS} ./hosts_for_bastion ${VM_USERNAME}@${BASTION_WAN_IP}:/tmp/hosts_for_bastion
+ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo bash -c 'cat /tmp/hosts_for_bastion >> /etc/hosts'"
 
 # Закидываем ключ на bastion
 echo -e "${GREEN}... key${NC}"
-scp ${SSH_KEYS} ./ssh-keys/vm-cloud-diplom pks@${BASTION_WAN_IP}:/home/pks/.ssh/vm-cloud-diplom
+scp ${SSH_KEYS} ./ssh-keys/vm-cloud-diplom ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/.ssh/vm-cloud-diplom
 
 # Закидываем ansible на bastion
 echo -e "${GREEN}... ansible${NC}"
-scp ${SSH_KEYS} -r ./ansible pks@${BASTION_WAN_IP}:/home/pks/
+scp ${SSH_KEYS} -r ./ansible ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/
+# Ansible не будет запускаться из каталога с правами выше 755
+ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo chmod 755 ${RESOURCE_HOME}/ansible"
 
 # Обновляем hosts на нашем хосте
 #test ! -e /etc/hosts.bak && sudo cp /etc/hosts /etc/hosts.bak
@@ -210,19 +214,19 @@ echo -e "${YELLOW}Testing SSH connections...${NC}"
 # Увеличила ConnectTimeout=15
 #ansible all -m ping
 sleep 20
-ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible all -m ping"
+ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "cd ansible && ansible all -m ping"
 
 #!!!!!
 #exit
 #!!!!!
 
 # Последовательное выполнение плейбуков
-#for playbook in "${PLAYBOOKS[@]}"; do
+for playbook in "${PLAYBOOKS[@]}"; do
   echo -e "${GREEN}Executing ${playbook}...${NC}"
 #  ansible-playbook playbooks/${playbook}
   #ssh -i ssh-keys/vm-cloud-diplom -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null pks@158.160.109.121 "cd ansible && ansible-playbook playbooks/zabbix-server.yml"
-  ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/${playbook}" 
-#done
+  ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/${playbook}" 
+done
 
 #ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/webservers.yml"
 #ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/zabbix-server.yml"
@@ -230,3 +234,14 @@ ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible all -m ping"
 #ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/elastic-server.yml"
 
 echo -e "${GREEN}=== Deployment completed successfully! ===${NC}"
+
+# Функция проверки доступности ресурсов
+check_services() {
+    local services=("nginx" "zabbix-server" "elasticsearch")
+    for service in "${services[@]}"; do
+        if ! ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "systemctl is-active -q $service"; then
+            log "ERROR" "Сервис $service не запущен"
+            return 1
+        fi
+    done
+}

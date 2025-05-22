@@ -32,3 +32,7 @@ output "web_b_name" {
 output "elastic_name" {
   value = yandex_compute_instance.elastic.name
 }
+
+output "vm_username" {
+  value = var.vm_username
+}

@@ -1,5 +1,6 @@
 ---
-- hosts: elastic
+- name: Установка и настройка elastic 
+  hosts: elastic
   vars_files:
     - "../group_vars/all/main.yml"
   become: yes
