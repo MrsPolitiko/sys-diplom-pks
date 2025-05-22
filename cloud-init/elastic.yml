@@ -11,6 +11,5 @@ package_update: true
 package_upgrade: false 
 
 packages:
-  - ansible
   - python3
   - python3-pip

@@ -1,6 +1,3 @@
-#ansible_user: pks
-#ansible_ssh_private_key_file: ../ssh-keys/vm-cloud-diplom
-#ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30
 
 # Настройки Zabbix
 zabbix_version: "7.0"
@@ -13,8 +10,8 @@ zabbix_server: "zabbix.example.com"
 php_fpm_socket: "/var/run/php/php8.1-fpm.sock"
 
 # Адреса ресурсов
-zabbix_server_ip: 10.0.1.4
-bastion_ip: 
-weba_ip: 10.0.1.29
-webb_ip: 10.0.2.18
-elastic_ip: 10.0.1.8
+zabbix_server_ip: zabbix.ru-central1.internal
+bastion_ip: bastion.ru-central1.internal
+weba_ip: web-a.ru-central1.internal
+webb_ip: web-b.ru-central1.internal
+elastic_ip: elastic.ru-central.internal

@@ -1,5 +1,7 @@
 ---
 - hosts: elastic
+  vars_files:
+    - "../group_vars/all/main.yml"
   become: yes
   tasks:
     - name: Install Java

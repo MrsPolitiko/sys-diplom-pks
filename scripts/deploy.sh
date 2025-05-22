@@ -2,10 +2,13 @@
 
 # Define some constants
 SSH_CONNECT_TIMEOUT="-o ConnectTimeout=30"
-SSH_IDENTITY_FILE="ssh-keys/vm-cloud-diplom"
+SSH_IDENTITY_FILE=$(pwd)"/ssh-keys/vm-cloud-diplom"
 SSH_COMMON_ARGS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SSH_CONNECT_TIMEOUT"
 SSH_KEYS="-i $SSH_IDENTITY_FILE $SSH_COMMON_ARGS"
 SSH_CONFIG="$HOME/.ssh/config"
+
+#echo $SSH_IDENTITY_FILE
+#exit
 
 PLAYBOOKS=("webservers.yml" "zabbix-server.yml"  "zabbix-agents.yml")
 
@@ -68,22 +71,24 @@ cd ..  # В корне проекта
 echo -e "${GREEN}Updating Ansible inventory...${NC}"
 cat > ansible/inventory/hosts.ini <<EOF
 [bastion]
-${BASTION_WAN_IP}
+${BASTION_FQDN}
 
 [zabbix]
-${ZABBIX_IP}
+${ZABBIX_FQDN}
 
 [webservers]
-${WEB_A_IP}
-${WEB_B_IP}
+${WEB_A_FQDN}
+${WEB_B_FQDN}
 
 [elastic]
-${ELASTIC_IP}
+${ELASTIC_FQDN}
 
 # !!! Для проксирования SSH обязательно нужно указывать в ProxyCommand= -i ../ssh-keys/vm-cloud-diplom  
 [all:vars]
-ansible_ssh_private_key_file=../ssh-keys/vm-cloud-diplom
-ansible_ssh_common_args='${SSH_CONNECT_TIMEOUT} -o ProxyCommand="ssh -W %h:%p -q pks@${BASTION_WAN_IP} -i ../${SSH_IDENTITY_FILE}"'
+#ansible_ssh_private_key_file=../ssh-keys/vm-cloud-diplom
+#ansible_ssh_common_args='${SSH_CONNECT_TIMEOUT} -o ProxyCommand="ssh -W %h:%p -q pks@${BASTION_WAN_IP} -i ../${SSH_IDENTITY_FILE}"'
+ansible_ssh_private_key_file=/home/pks/.ssh/vm-cloud-diplom
+ansible_ssh_common_args='${SSH_CONNECT_TIMEOUT}'
 
 [bastion:vars]
 ansible_ssh_common_args=''
@@ -93,9 +98,6 @@ EOF
 # ansible !!! Change to FQDN
 echo -e "${GREEN}Updating Ansible group_vars...${NC}"
 cat > ansible/group_vars/all/main.yml <<EOF
-#ansible_user: pks
-#ansible_ssh_private_key_file: ../${SSH_IDENTITY_FILE}
-#ansible_ssh_common_args: ${SSH_COMMON_ARGS}
 
 # Настройки Zabbix
 zabbix_version: "7.0"
@@ -108,11 +110,11 @@ zabbix_server: "zabbix.example.com"
 php_fpm_socket: "/var/run/php/php8.1-fpm.sock"
 
 # Адреса ресурсов
-zabbix_server_ip: ${ZABBIX_IP}
-bastion_ip: ${BASTION_IP}
-weba_ip: ${WEB_A_IP}
-webb_ip: ${WEB_B_IP}
-elastic_ip: ${ELASTIC_IP}
+zabbix_server_ip: ${ZABBIX_FQDN}
+bastion_ip: ${BASTION_FQDN}
+weba_ip: ${WEB_A_FQDN}
+webb_ip: ${WEB_B_FQDN}
+elastic_ip: ${ELASTIC_FQDN}
 EOF
 
 # hosts
@@ -170,7 +172,8 @@ echo -e "${GREEN}... ansible${NC}"
 scp ${SSH_KEYS} -r ./ansible pks@${BASTION_WAN_IP}:/home/pks/
 
 # Обновляем hosts на нашем хосте
-#test ! -e /etc/hosts.bak && cp /etc/hosts /etc/hosts.bak
+#test ! -e /etc/hosts.bak && sudo cp /etc/hosts /etc/hosts.bak
+#sudo cat /etc/hosts.bak > /etc/hosts
 #sudo cat ./hosts_for_bastion >> /etc/hosts
 
 # Обновляем .ssh/config на нашем хосте
@@ -185,7 +188,9 @@ awk -v new_ip="$BASTION_WAN_IP" '
 #!!!!!
 
 echo -e "${GREEN}Running Ansible playbooks...${NC}"
-cd ansible/
+#cd ansible/
+
+#exit
 
 # Костыль чтобы Ansible подхватил свой конфигурационный файл
 #export ANSIBLE_CONFIG="$(pwd)/ansible.cfg"
@@ -196,16 +201,25 @@ echo -e "${YELLOW}Testing SSH connections...${NC}"
 #echo -e "${GREEN}Waiting for ssh to rise...${NC}"
 #sleep 60 
 # Увеличила ConnectTimeout=15
-ansible all -m ping
+#ansible all -m ping
+sleep 20
+ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible all -m ping"
 
 #!!!!!
 #exit
 #!!!!!
 
 # Последовательное выполнение плейбуков
-for playbook in "${PLAYBOOKS[@]}"; do
+#for playbook in "${PLAYBOOKS[@]}"; do
   echo -e "${GREEN}Executing ${playbook}...${NC}"
-  ansible-playbook playbooks/${playbook}
-done
+#  ansible-playbook playbooks/${playbook}
+  #ssh -i ssh-keys/vm-cloud-diplom -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null pks@158.160.109.121 "cd ansible && ansible-playbook playbooks/zabbix-server.yml"
+  ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/${playbook}" 
+#done
+
+#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/webservers.yml"
+#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/zabbix-server.yml"
+#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/zabbix-agents.yml"
+#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/elastic-server.yml"
 
 echo -e "${GREEN}=== Deployment completed successfully! ===${NC}"
