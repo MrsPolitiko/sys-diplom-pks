@@ -28,6 +28,13 @@ if [ "$PARAM" = "clear" ]; then
   terraform -chdir=./terraform destroy -auto-approve
 fi
 
+PARAM=$1 # The first param of the script
+if [ "$PARAM" = "destroy" ]; then 
+  echo -e "${YELLOW}=== Destroy deployment ===${NC}"
+  terraform -chdir=./terraform destroy -auto-approve
+  exit 0
+fi
+
 echo -e "${YELLOW}=== Starting deployment ===${NC}"
 
 # Terraform Part
