@@ -63,21 +63,6 @@
           update_cache: yes
           state: present
   
-      # Настройка Zabbix
-      # - name: Import Zabbix database schema
-      #   ansible.builtin.command: >
-      #     zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz |
-      #     PGPASSWORD={{ zabbix_db_password }} psql -h localhost -U {{ zabbix_db_user }} {{ zabbix_db_name }}
-      #   changed_when: false
-
-      # - name: Import Zabbix database schema
-      #   ansible.builtin.command: >
-      #     sh -c 'cd /tmp &&
-      #     zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | psql {{ zabbix_db_name }}'
-      #   become: yes
-      #   become_user: postgres
-      #   changed_when: false
-
       # Импорт делать нужно с явным указанием логин-пароля
       - name: Import Zabbix database schema
         ansible.builtin.command: |
@@ -260,13 +245,70 @@
           state: absent
         notify: restart nginx
 
-    handlers:
-      - name: restart nginx
-        ansible.builtin.service:
-          name: nginx
-          state: restarted
+      - name: Read from hosts file
+        command: cat /tmp/hosts_for_bastion
+        register: hosts_content
+        delegate_to: localhost
 
-      - name: restart php-fpm
-        ansible.builtin.service:
-          name: php8.1-fpm
-          state: restarted
+      # https://docs.ansible.com/ansible/latest/collections/ansible/builtin/blockinfile_module.html#ansible-collections-ansible-builtin-blockinfile-module
+      - name: Add mappings to hosts
+        ansible.builtin.blockinfile:
+          path: /etc/hosts
+          block: "{{ hosts_content.stdout | trim }}"
+          marker: "# {mark} ANSIBLE MANAGED BLOCK - ZABBIX HOSTS"
+          state: present
+          #validate: "/usr/bin/getent hosts %s"  # проверка синтаксиса
+          #backup: yes
+
+
+      - name: Get server token
+        ansible.builtin.shell: |
+          curl -X POST -H 'Content-Type: application/json' -d '{
+            "jsonrpc": "2.0",
+            "method": "user.login",
+            "params": {
+                "username": "Admin",
+                "password": "{{ zabbix_db_password }}"
+            },
+            "id": 1
+          }' http://127.0.0.1/api_jsonrpc.php
+        register: ztoken
+        changed_when: false
+
+      - name: Parse JSON and read into variables
+        set_fact:
+            auth_token: "{{ (ztoken.stdout | from_json).result }}"
+
+      - name: print dict items  
+        debug:  
+            msg: "{{ auth_token }}"  
+
+      - name: Get dashboards list
+        ansible.builtin.shell: |
+          curl -X POST -H 'Content-Type: application/json' -d '{
+            "jsonrpc": "2.0",
+            "method": "dashboard.get",
+            "params": {
+              "output": ["dashboardid", "name"]
+            },
+            "auth": "{{ auth_token }}",
+            "id": 1
+          }'   http://127.0.0.1/api_jsonrpc.php  > dashboard_export.json      
+        register: dashboards
+        changed_when: false
+
+      # - name: print dict items  
+      #   debug:  
+      #       msg: "{{ auth_token }}"  
+      #   loop: "{{  dashboards|list }}"
+
+    handlers:
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+    - name: restart php-fpm
+      ansible.builtin.service:
+        name: php8.1-fpm
+        state: restarted

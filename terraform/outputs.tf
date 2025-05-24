@@ -1,19 +1,22 @@
-output "bastion_ip" {
+output "bastion_wan_ip" {
   value = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
 }
-output "web_a_internal_ip" {
+output "bastion_lan_ip" {
+  value = yandex_compute_instance.bastion.network_interface.0.ip_address
+}
+output "web_a_lan_ip" {
   value = yandex_compute_instance.web_a.network_interface.0.ip_address
 }
-output "web_b_internal_ip" {
+output "web_b_lan_ip" {
   value = yandex_compute_instance.web_b.network_interface.0.ip_address
 }
-output "zabbix_internal_ip" {
+output "zabbix_lan_ip" {
   value = yandex_compute_instance.zabbix.network_interface.0.ip_address
 }
-output "zabbix_ip" {
+output "zabbix_wan_ip" {
   value = yandex_compute_instance.zabbix.network_interface.0.nat_ip_address
 }
-output "elastic_internal_ip" {
+output "elastic_lan_ip" {
   value = yandex_compute_instance.elastic.network_interface.0.ip_address
 }
 

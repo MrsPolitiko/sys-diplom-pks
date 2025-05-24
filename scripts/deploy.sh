@@ -7,9 +7,6 @@ SSH_COMMON_ARGS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SS
 SSH_KEYS="-i $SSH_IDENTITY_FILE $SSH_COMMON_ARGS"
 SSH_CONFIG="$HOME/.ssh/config"
 
-#echo $SSH_IDENTITY_FILE
-#exit
-
 PLAYBOOKS=("webservers.yml" "zabbix-server.yml"  "zabbix-agents.yml")
 
 # Colors for output
@@ -18,22 +15,53 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Function definitions
+copy_playbooks() {
+    # Копируем файлы на ресурс bastion
+    echo -e "${GREEN}Copying config files...${NC}"
+    # Обновляем hosts на bastion
+    echo -e "${GREEN}... hosts${NC}"
+    scp ${SSH_KEYS} ./hosts_for_bastion ${VM_USERNAME}@${BASTION_WAN_IP}:/tmp/hosts_for_bastion
+    ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo bash -c 'cat /tmp/hosts_for_bastion >> /etc/hosts'"
+
+    # Закидываем ansible на bastion
+    echo -e "${GREEN}... ansible${NC}"
+    scp ${SSH_KEYS} -r ./ansible ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/
+    # Ansible не будет запускаться из каталога с правами выше 755
+    ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo chmod 755 ${RESOURCE_HOME}/ansible"
+}
+
+copy_keys() {
+    # Закидываем ключ на bastion
+    echo -e "${GREEN}... key${NC}"
+    scp ${SSH_KEYS} ./ssh-keys/vm-cloud-diplom ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/.ssh/vm-cloud-diplom
+}
+
 # Exit on error and show commands
 set -e
 set -x
 
 PARAM=$1 # The first param of the script
-if [ "$PARAM" = "clear" ]; then 
-  echo -e "${YELLOW}=== Destroy deployment ===${NC}"
-  terraform -chdir=./terraform destroy -auto-approve
-fi
-
-PARAM=$1 # The first param of the script
-if [ "$PARAM" = "destroy" ]; then 
-  echo -e "${YELLOW}=== Destroy deployment ===${NC}"
-  terraform -chdir=./terraform destroy -auto-approve
-  exit 0
-fi
+case "$PARAM" in
+  "clear"|"destroy")
+    echo -e "${YELLOW}=== Destroy deployment ===${NC}"
+    terraform -chdir=./terraform destroy -auto-approve
+    [ "$PARAM" = "destroy" ] && exit 0
+    ;;
+  "copy")
+    echo -e "${YELLOW}=== Copying files to bastion ===${NC}"
+    # Получаем необходимые переменные
+    cd terraform/ || exit
+    VM_USERNAME=$(terraform output -raw vm_username)
+    BASTION_WAN_IP=$(terraform output -raw bastion_ip)
+    cd ..
+    RESOURCE_HOME="/home/${VM_USERNAME}"
+    
+    copy_playbooks "${VM_USERNAME}" "${BASTION_WAN_IP}" "${RESOURCE_HOME}"
+    copy_keys "${VM_USERNAME}" "${BASTION_WAN_IP}" "${RESOURCE_HOME}"
+    exit 0
+    ;;
+esac
 
 echo -e "${YELLOW}=== Starting deployment ===${NC}"
 
@@ -65,12 +93,13 @@ WEB_B_FQDN="${WEB_B_NAME}.ru-central1.internal"
 ELASTIC_FQDN="${ELASTIC_NAME}.ru-central.internal"
 
 # Get outputs for bastion
-BASTION_WAN_IP=$(terraform output -raw bastion_ip)
-ZABBIX_IP=$(terraform output -raw zabbix_internal_ip)
-ZABBIX_WAN_IP=$(terraform output -raw zabbix_ip)
-WEB_A_IP=$(terraform output -raw web_a_internal_ip)
-WEB_B_IP=$(terraform output -raw web_b_internal_ip)
-ELASTIC_IP=$(terraform output -raw elastic_internal_ip)
+BASTION_WAN_IP=$(terraform output -raw bastion_wan_ip)
+BASTION_IP=$(terraform output -raw bastion_lan_ip)
+ZABBIX_IP=$(terraform output -raw zabbix_lan_ip)
+ZABBIX_WAN_IP=$(terraform output -raw zabbix_wan_ip)
+WEB_A_IP=$(terraform output -raw web_a_lan_ip)
+WEB_B_IP=$(terraform output -raw web_b_lan_ip)
+ELASTIC_IP=$(terraform output -raw elastic_lan_ip)
 
 cd ..  # В корне проекта
 
@@ -78,6 +107,8 @@ cd ..  # В корне проекта
 #******************* Инвентори плейбука *********************
 # ansible !!! Change to FQDN
 echo -e "${GREEN}Updating Ansible inventory...${NC}"
+
+# 😸 Генерируем inventory файл для Ansible
 cat > ansible/inventory/hosts.ini <<EOF
 [bastion]
 ${BASTION_FQDN}
@@ -106,6 +137,8 @@ EOF
 #******************* Общие переменные плэйбука *********************
 # ansible !!! Change to FQDN
 echo -e "${GREEN}Updating Ansible group_vars...${NC}"
+
+# 😺 Генерируем переменные для Ansible
 cat > ansible/group_vars/all/main.yml <<EOF
 
 # Настройки Zabbix
@@ -128,7 +161,7 @@ EOF
 
 # hosts
 cat > hosts_for_bastion <<EOF
-${BASTION_WAN_IP}   ${BASTION_FQDN}
+${BASTION_IP}   ${BASTION_FQDN}
 ${WEB_A_IP}   ${WEB_A_FQDN}
 ${WEB_B_IP}   ${WEB_B_FQDN}
 ${ZABBIX_IP}   ${ZABBIX_FQDN}
@@ -165,22 +198,9 @@ if [ $duration -eq 0 ]; then
   exit 1
 fi
 
-# Копируем файлы на ресурс bastion
-echo -e "${GREEN}Copying config files...${NC}"
-# Обновляем hosts на bastion
-echo -e "${GREEN}... hosts${NC}"
-scp ${SSH_KEYS} ./hosts_for_bastion ${VM_USERNAME}@${BASTION_WAN_IP}:/tmp/hosts_for_bastion
-ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo bash -c 'cat /tmp/hosts_for_bastion >> /etc/hosts'"
+copy_playbooks
+copy_keys
 
-# Закидываем ключ на bastion
-echo -e "${GREEN}... key${NC}"
-scp ${SSH_KEYS} ./ssh-keys/vm-cloud-diplom ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/.ssh/vm-cloud-diplom
-
-# Закидываем ansible на bastion
-echo -e "${GREEN}... ansible${NC}"
-scp ${SSH_KEYS} -r ./ansible ${VM_USERNAME}@${BASTION_WAN_IP}:${RESOURCE_HOME}/
-# Ansible не будет запускаться из каталога с правами выше 755
-ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "sudo chmod 755 ${RESOURCE_HOME}/ansible"
 
 # Обновляем hosts на нашем хосте
 #test ! -e /etc/hosts.bak && sudo cp /etc/hosts /etc/hosts.bak
@@ -194,33 +214,14 @@ awk -v new_ip="$BASTION_WAN_IP" '
     {print}
 ' "$SSH_CONFIG" > "${SSH_CONFIG}.tmp" && mv "${SSH_CONFIG}.tmp" "$SSH_CONFIG"
 
-#!!!!!
-#exit
-#!!!!!
-
 echo -e "${GREEN}Running Ansible playbooks...${NC}"
-#cd ansible/
-
-#exit
-
-# Костыль чтобы Ansible подхватил свой конфигурационный файл
-#export ANSIBLE_CONFIG="$(pwd)/ansible.cfg"
 
 # Проверка доступности хостов
 echo -e "${YELLOW}Testing SSH connections...${NC}"
-#ansible all -i inventory/hosts.ini -e "-o StrictHostKeyChecking=no -o ConnectTimeout=5" -m ping --user pks
-#echo -e "${GREEN}Waiting for ssh to rise...${NC}"
-#sleep 60 
-# Увеличила ConnectTimeout=15
-#ansible all -m ping
 sleep 20
 ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "cd ansible && ansible all -m ping"
 
-#!!!!!
-#exit
-#!!!!!
-
-# Последовательное выполнение плейбуков
+# 😺 Последовательное выполнение плейбуков
 for playbook in "${PLAYBOOKS[@]}"; do
   echo -e "${GREEN}Executing ${playbook}...${NC}"
 #  ansible-playbook playbooks/${playbook}
@@ -228,20 +229,37 @@ for playbook in "${PLAYBOOKS[@]}"; do
   ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/${playbook}" 
 done
 
-#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/webservers.yml"
-#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/zabbix-server.yml"
-#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/zabbix-agents.yml"
-#ssh ${SSH_KEYS} pks@${BASTION_WAN_IP} "cd ansible && ansible-playbook playbooks/elastic-server.yml"
-
 echo -e "${GREEN}=== Deployment completed successfully! ===${NC}"
 
 # Функция проверки доступности ресурсов
 check_services() {
     local services=("nginx" "zabbix-server" "elasticsearch")
     for service in "${services[@]}"; do
+        # ssh ssh-keys/vm-cloud-diplom pks@158.160.62.40  "systemctl is-active -q nginx
         if ! ssh ${SSH_KEYS} ${VM_USERNAME}@${BASTION_WAN_IP} "systemctl is-active -q $service"; then
             log "ERROR" "Сервис $service не запущен"
             return 1
         fi
     done
 }
+
+log() {
+    # exec > >(tee "${0}".log) 2>&1  # Копируем вывод в файл
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "[$timestamp] [$level] $message" 
+}
+
+update_session_hosts() {
+    # Обновляем hosts для текущей сессии
+    #test ! -e /etc/hosts.bak && sudo cp /etc/hosts /etc/hosts.bak
+    #sudo cat /etc/hosts.bak > /etc/hosts
+    #sudo cat ./hosts_for_bastion >> /etc/hosts
+    return
+}
+
+# Helpful links
+# logging
+# https://r4ven.me/it-razdel/komandnaya-stroka-linux/nastrojka-logirovaniya-vyvoda-skriptov-bash/
+
